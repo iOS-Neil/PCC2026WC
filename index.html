@@ -48,45 +48,7 @@
     const ADMIN_UID = "mJFQl94QpgMzbfi07u2EStaxDJZ2"; 
     const appId = "my-world-cup-predictor-2026";
 
-    if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
-    const auth = firebase.auth();
-    const db = firebase.database();
-
-    const COUNTRY_FLAGS = {
-        "Mexico": "🇲🇽", "South Africa": "🇿🇦", "South Korea": "🇰🇷", "Czech Republic": "🇨🇿",
-        "Canada": "🇨🇦", "Bosnia": "🇧🇦", "Qatar": "🇶🇦", "Switzerland": "🇨🇭",
-        "Brazil": "🇧🇷", "Morocco": "🇲🇦", "Haiti": "🇭🇹", "Scotland": "🏴󠁧󠁢󠁳󠁣󠁴󠁿",
-        "USA": "🇺🇸", "Paraguay": "🇵🇾", "Australia": "🇦🇺", "Turkey": "🇹🇷",
-        "Germany": "🇩🇪", "Curaçao": "🇨🇼", "Ivory Coast": "🇨🇮", "Ecuador": "🇪🇨",
-        "Netherlands": "🇳🇱", "Japan": "🇯🇵", "Sweden": "🇸🇪", "Tunisia": "🇹🇳",
-        "Belgium": "🇧🇪", "Egypt": "🇪🇬", "Iran": "🇮🇷", "New Zealand": "🇳🇿",
-        "Spain": "🇪🇸", "Cape Verde": "🇨🇻", "Saudi Arabia": "🇸🇦", "Uruguay": "🇺🇾", "TBD": "🏳️"
-    };
-
-    const GROUPS_TEAMS = {
-        A: ["Mexico", "South Africa", "South Korea", "Czech Republic"],
-        B: ["Canada", "Bosnia", "Qatar", "Switzerland"],
-        C: ["Brazil", "Morocco", "Haiti", "Scotland"],
-        D: ["USA", "Paraguay", "Australia", "Turkey"],
-        E: ["Germany", "Curaçao", "Ivory Coast", "Ecuador"],
-        F: ["Netherlands", "Japan", "Sweden", "Tunisia"],
-        G: ["Belgium", "Egypt", "Iran", "New Zealand"],
-        H: ["Spain", "Cape Verde", "Saudi Arabia", "Uruguay"]
-    };
-
-    function App() {
-        const [user, setUser] = React.useState(null);
-        const [authView, setAuthView] = React.useState('login'); 
-        const [authLoading, setAuthLoading] = React.useState(true);
-        const [matches, setMatches] = React.useState([]);
-        const [predictions, setPredictions] = React.useState([]);
-        const [users, setUsers] = React.useState([]);
-        const [activeTab, setActiveTab] = React.useState('predictions');
-        const [activeGroup, setActiveGroup] = React.useState('A');
-        const [adminMode, setAdminMode] = React.useState(false);
-        const [syncStatus, setSyncStatus] = React.useState('Idle');
-        const [lastSyncTime, setLastSyncTime] = React.useState(0);
-
+    // ... existing code ... ... existing code ...
         React.useEffect(() => {
             auth.onAuthStateChanged(u => {
                 setUser(u);
@@ -98,8 +60,6 @@
                 const data = snap.val() || {};
                 const list = Object.keys(data).map(k => ({ ...data[k], id: k }));
                 setMatches(list);
-                // Attempt auto-sync when data loads
-                if (list.length > 0) attemptAutoSync(list);
             });
 
             db.ref(`artifacts/${appId}/public/data/predictions`).on('value', snap => {
@@ -113,42 +73,29 @@
             });
         }, []);
 
-        const attemptAutoSync = async (currentMatches) => {
-            const now = Date.now();
-            // Throttling: Max 1 sync check every 5 minutes automatically
-            if (now - lastSyncTime < 300000) return; 
-            setLastSyncTime(now);
-            await syncScoresFromAPI(currentMatches);
-        };
-
         const syncScoresFromAPI = async (currentMatches) => {
             if (!API_TOKEN) {
-                setSyncStatus('❌ No API Token');
+                setSyncStatus('❌ No API Token Configured');
                 return;
             }
             
-            setSyncStatus('🛰️ Syncing Live Data...');
-            console.log("Starting Sync...");
+            setSyncStatus('🛰️ Requesting API Data...');
             
             try {
+                // We use a dedicated proxy that specifically handles the API headers better
                 const apiUrl = 'https://api.football-data.org/v4/competitions/WC/matches';
-                
-                // Using a more robust CORS proxy that preserves headers better
                 const proxiedUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(apiUrl)}`;
                 
                 const response = await fetch(proxiedUrl);
-                if (!response.ok) throw new Error('Proxy connection failed');
-                
                 const wrapper = await response.json();
-                // AllOrigins wraps the result in a 'contents' string
                 const data = JSON.parse(wrapper.contents);
                 
-                if (data.errorCode) {
-                    setSyncStatus(`❌ API Error: ${data.message}`);
+                if (data.errorCode || data.message) {
+                    setSyncStatus(`❌ API Note: ${data.message || 'Resource Restricted'}`);
                     return;
                 }
 
-                if (data.matches) {
+                if (data.matches && data.matches.length > 0) {
                     const updates = {};
                     let updatedCount = 0;
 
@@ -167,7 +114,6 @@
                             const hScore = apiMatch.score.fullTime.home ?? 0;
                             const aScore = apiMatch.score.fullTime.away ?? 0;
 
-                            // Only update if something changed
                             if (dbMatch.homeScore !== hScore || dbMatch.awayScore !== aScore || dbMatch.status !== newStatus) {
                                 updates[`artifacts/${appId}/public/data/matches/${dbMatch.id}`] = {
                                     ...dbMatch,
@@ -184,17 +130,33 @@
 
                     if (updatedCount > 0) {
                         await db.ref().update(updates);
-                        setSyncStatus(`✅ Updated ${updatedCount} matches`);
+                        setSyncStatus(`✅ Synced ${updatedCount} Results`);
                     } else {
-                        setSyncStatus('💤 Data is current');
+                        setSyncStatus('💤 Matches haven\'t started yet');
                     }
                 } else {
-                    setSyncStatus('⚠️ No match data found in API');
+                    setSyncStatus('⚠️ API returned no matches for WC2026 yet');
                 }
             } catch (err) {
-                console.error("Sync error:", err);
-                setSyncStatus('❌ Sync Blocked (Check Console)');
+                setSyncStatus('❌ Sync Error (API Restricted or Offline)');
             }
+        };
+
+        const updateMatchScore = (matchId, team, change) => {
+            const m = matches.find(match => match.id === matchId);
+            if (!m) return;
+            let h = parseInt(m.homeScore) || 0;
+            let a = parseInt(m.awayScore) || 0;
+            
+            if (team === 'home') h = Math.max(0, h + change);
+            else a = Math.max(0, a + change);
+
+            db.ref(`artifacts/${appId}/public/data/matches/${matchId}`).update({
+                homeScore: h,
+                awayScore: a,
+                status: 'FINISHED',
+                completed: true
+            });
         };
 
         const leaderboard = React.useMemo(() => {
@@ -245,10 +207,12 @@
                         <div className="w-10 h-10 bg-emerald-500 rounded-2xl flex items-center justify-center text-2xl shadow-lg shadow-emerald-500/20">🏆</div>
                         <div>
                             <h1 className="text-xl font-black text-emerald-400 uppercase tracking-tighter">WC Predictor 2026</h1>
-                            <div className="flex items-center gap-2">
-                                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-                                <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">{syncStatus}</p>
-                            </div>
+                            {user?.uid === ADMIN_UID && (
+                                <div className="flex items-center gap-2">
+                                    <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                                    <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">{syncStatus}</p>
+                                </div>
+                            )}
                         </div>
                     </div>
                     
@@ -272,10 +236,15 @@
 
                 {/* ADMIN TOOLS */}
                 {adminMode && (
-                    <div className="bg-amber-500/10 border border-amber-500/20 p-6 rounded-[2rem] flex items-center gap-4 animate-in">
-                         <div className="text-xs font-black text-amber-500 uppercase">Admin Hub:</div>
-                         <button onClick={() => syncScoresFromAPI(matches)} className="bg-amber-500 text-slate-900 px-4 py-2 rounded-xl text-[10px] font-black uppercase shadow-lg shadow-amber-500/20 hover:scale-105 transition-all">Force API Sync</button>
-                         <p className="text-[9px] text-amber-500/70 font-bold max-w-xs">Manual sync bypasses the 5-minute cooldown. Use if real-world goals aren't appearing.</p>
+                    <div className="bg-amber-500/10 border border-amber-500/20 p-6 rounded-[2rem] flex flex-col md:flex-row items-center gap-6 animate-in">
+                         <div className="flex items-center gap-3">
+                            <div className="w-8 h-8 bg-amber-500 rounded-lg flex items-center justify-center text-slate-900 font-black text-xs">A</div>
+                            <div className="text-xs font-black text-amber-500 uppercase tracking-widest">Holiday Admin Hub</div>
+                         </div>
+                         <div className="flex flex-wrap gap-3">
+                            <button onClick={() => syncScoresFromAPI(matches)} className="bg-amber-500 text-slate-900 px-5 py-2.5 rounded-xl text-[10px] font-black uppercase shadow-lg shadow-amber-500/20 hover:scale-105 transition-all">Attempt API Sync</button>
+                            <p className="text-[9px] text-amber-500/70 font-bold max-w-[250px] leading-relaxed">Automatic sync is disabled. Use this button to try pulling scores, or use the <span className="text-amber-400 underline">+/- Buttons</span> on each match card for 100% reliable updates.</p>
+                         </div>
                     </div>
                 )}
 
@@ -342,6 +311,12 @@
                                                     <div className="text-center w-24">
                                                         <span className="text-4xl block mb-3 filter drop-shadow-lg">{COUNTRY_FLAGS[m.home]}</span>
                                                         <span className="text-[10px] font-black text-slate-100 uppercase truncate block tracking-tighter">{m.home}</span>
+                                                        {adminMode && (
+                                                            <div className="flex justify-center gap-1 mt-2">
+                                                                <button onClick={() => updateMatchScore(m.id, 'home', -1)} className="w-6 h-6 bg-amber-500/20 text-amber-500 rounded-md font-black text-xs hover:bg-amber-500 hover:text-slate-950">-</button>
+                                                                <button onClick={() => updateMatchScore(m.id, 'home', 1)} className="w-6 h-6 bg-amber-500/20 text-amber-500 rounded-md font-black text-xs hover:bg-amber-500 hover:text-slate-950">+</button>
+                                                            </div>
+                                                        )}
                                                     </div>
                                                     <div className="text-center">
                                                         {(m.completed || isLive) ? (
@@ -355,6 +330,12 @@
                                                     <div className="text-center w-24">
                                                         <span className="text-4xl block mb-3 filter drop-shadow-lg">{COUNTRY_FLAGS[m.away]}</span>
                                                         <span className="text-[10px] font-black text-slate-100 uppercase truncate block tracking-tighter">{m.away}</span>
+                                                        {adminMode && (
+                                                            <div className="flex justify-center gap-1 mt-2">
+                                                                <button onClick={() => updateMatchScore(m.id, 'away', -1)} className="w-6 h-6 bg-amber-500/20 text-amber-500 rounded-md font-black text-xs hover:bg-amber-500 hover:text-slate-950">-</button>
+                                                                <button onClick={() => updateMatchScore(m.id, 'away', 1)} className="w-6 h-6 bg-amber-500/20 text-amber-500 rounded-md font-black text-xs hover:bg-amber-500 hover:text-slate-950">+</button>
+                                                            </div>
+                                                        )}
                                                     </div>
                                                 </div>
 
