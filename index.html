@@ -31,7 +31,7 @@
     };
 
     const API_TOKEN = "5c19fe248b844cf6b7673905997c9ad4";
-    // PASTE YOUR UID HERE:
+    // PASTE YOUR UID HERE AFTER REGISTERING:
     const ADMIN_UID = "mJFQl94QpgMzbfi07u2EStaxDJZ2"; 
     const appId = "my-world-cup-predictor-2026";
 
@@ -68,25 +68,23 @@
         const [username, setUsername] = React.useState('');
         const [password, setPassword] = React.useState('');
         const [matches, setMatches] = React.useState([]);
-        const [predictions, setPredictions] = React.useState([]);
-        const [users, setUsers] = React.useState([]);
         const [adminMode, setAdminMode] = React.useState(false);
+        const [activeGroup, setActiveGroup] = React.useState('A');
         const [syncStatus, setSyncStatus] = React.useState('');
 
         React.useEffect(() => {
-            auth.onAuthStateChanged(u => {
-                setUser(u);
-                setAuthLoading(false);
+            auth.onAuthStateChanged(u => { setUser(u); setAuthLoading(false); });
+            db.ref(`artifacts/${appId}/public/data/matches`).on('value', snap => {
+                const data = snap.val() || {};
+                setMatches(Object.keys(data).map(k => ({ ...data[k], id: k })));
             });
-            db.ref(`artifacts/${appId}/public/data/matches`).on('value', snap => setMatches(Object.keys(snap.val() || {}).map(k => ({ ...snap.val()[k], id: k }))));
-            db.ref(`artifacts/${appId}/public/data/predictions`).on('value', snap => setPredictions(Object.keys(snap.val() || {}).map(k => ({ ...snap.val()[k], id: k }))));
-            db.ref(`artifacts/${appId}/public/data/users`).on('value', snap => setUsers(Object.values(snap.val() || {})));
         }, []);
 
         const seedMatches = () => {
             const matches = {};
             Object.keys(GROUPS_TEAMS).forEach(g => {
                 const teams = GROUPS_TEAMS[g];
+                // Match 2 updated to June 14
                 const groupMatches = [
                     { home: teams[0], away: teams[1], date: "June 11" },
                     { home: teams[2], away: teams[3], date: "June 14" }, 
@@ -110,9 +108,7 @@
                 });
                 const data = await response.json();
                 setSyncStatus('✅ Sync Successful');
-            } catch (err) {
-                setSyncStatus('❌ Sync Failed');
-            }
+            } catch (err) { setSyncStatus('❌ Sync Failed'); }
         };
 
         const handleAuth = async (e) => {
@@ -144,7 +140,7 @@
                 <header className="flex justify-between items-center glass-card p-6 rounded-3xl mb-6">
                     <div>
                         <h1 className="font-black text-emerald-400">WC PREDICTOR 2026</h1>
-                        <p className="text-[10px] text-slate-500">UID: {user.uid}</p>
+                        <p className="text-[10px] text-slate-500">YOUR UID: {user.uid}</p>
                     </div>
                     <div className="flex gap-4">
                         {user?.uid === ADMIN_UID && <button onClick={() => setAdminMode(!adminMode)} className="bg-amber-500 text-black px-4 py-2 rounded-xl font-bold">⚙️</button>}
@@ -163,15 +159,24 @@
                     </div>
                 )}
 
+                <div className="flex gap-2 mb-6">
+                    {Object.keys(GROUPS_TEAMS).map(g => (
+                        <button key={g} onClick={() => setActiveGroup(g)} className={`px-4 py-2 rounded-xl font-bold text-sm ${activeGroup === g ? 'bg-emerald-500 text-black' : 'bg-slate-800'}`}>Group {g}</button>
+                    ))}
+                </div>
+
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {matches.map(m => (
+                    {matches.filter(m => m.group === activeGroup).map(m => (
                         <div key={m.id} className="glass-card p-4 rounded-2xl">
                             <div className="flex justify-between items-center mb-2">
                                 <p className="text-xs font-bold text-slate-400">{m.date} - Group {m.group}</p>
                                 {m.completed && <span className="bg-emerald-500 text-[10px] px-2 py-0.5 rounded-full font-bold">FT</span>}
                             </div>
                             <div className="flex justify-between items-center my-4">
-                                <span className="text-2xl">{COUNTRY_FLAGS[m.home] || '🏳️'}</span>
+                                <div className="flex items-center gap-2">
+                                    <span className="text-2xl">{COUNTRY_FLAGS[m.home] || '🏳️'}</span>
+                                    <span className="font-bold">{m.home}</span>
+                                </div>
                                 <div className="flex items-center gap-2">
                                     {adminMode ? (
                                         <>
@@ -193,7 +198,10 @@
                                         <span className="text-xl font-bold">{m.awayScore}</span>
                                     )}
                                 </div>
-                                <span className="text-2xl">{COUNTRY_FLAGS[m.away] || '🏳️'}</span>
+                                <div className="flex items-center gap-2">
+                                    <span className="font-bold">{m.away}</span>
+                                    <span className="text-2xl">{COUNTRY_FLAGS[m.away] || '🏳️'}</span>
+                                </div>
                             </div>
                             {adminMode && <button onClick={() => updateMatch(m.id, 'completed', !m.completed)} className={`w-full rounded py-1 font-bold ${m.completed ? 'bg-slate-800' : 'bg-emerald-500'}`}>{m.completed ? 'Re-open Match' : 'Mark Finished'}</button>}
                         </div>
