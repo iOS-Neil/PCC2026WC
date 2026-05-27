@@ -42,7 +42,7 @@
         "Germany": "🇩🇪", "Curaçao": "🇨🇼", "Ivory Coast": "🇨🇮", "Ecuador": "🇪🇨",
         "Netherlands": "🇳🇱", "Japan": "🇯🇵", "Sweden": "🇸🇪", "Tunisia": "🇹🇳",
         "Belgium": "🇧🇪", "Egypt": "🇪🇬", "Iran": "🇮🇷", "New Zealand": "🇳🇿",
-        "Spain": "🇪🇸", "Cape Verde": "🇨🇻", "Saudi Arabia": "🇸🇦", "Uruguay": "🇾"
+        "Spain": "🇪🇸", "Cape Verde": "🇨🇻", "Saudi Arabia": "🇸🇦", "Uruguay": "🇺🇾"
     };
 
     const GROUPS_TEAMS = {
@@ -68,6 +68,7 @@
         const [predictions, setPredictions] = React.useState([]);
         const [users, setUsers] = React.useState([]);
         const [adminMode, setAdminMode] = React.useState(false);
+        const [syncStatus, setSyncStatus] = React.useState('');
 
         React.useEffect(() => {
             auth.onAuthStateChanged(u => {
@@ -85,7 +86,7 @@
                 const teams = GROUPS_TEAMS[g];
                 const groupMatches = [
                     { home: teams[0], away: teams[1], date: "June 11" },
-                    { home: teams[2], away: teams[3], date: "June 14" }, // Updated Date
+                    { home: teams[2], away: teams[3], date: "June 14" }, 
                     { home: teams[0], away: teams[2], date: "June 15" },
                     { home: teams[1], away: teams[3], date: "June 16" },
                     { home: teams[3], away: teams[0], date: "June 20" },
@@ -98,12 +99,29 @@
 
         const updateMatch = (id, field, val) => db.ref(`artifacts/${appId}/public/data/matches/${id}`).update({ [field]: val });
 
-        if (authLoading) return <div>Loading...</div>;
+        const manualSync = async () => {
+            setSyncStatus('🛰️ Requesting Data...');
+            try {
+                const response = await fetch(`https://api.allorigins.win/get?url=${encodeURIComponent('https://api.football-data.org/v4/competitions/WC/matches')}`, {
+                    headers: { 'X-Auth-Token': API_TOKEN }
+                });
+                const data = await response.json();
+                const matchesData = JSON.parse(data.contents).matches;
+                setSyncStatus('✅ Sync Successful');
+            } catch (err) {
+                setSyncStatus('❌ Sync Failed');
+            }
+        };
+
+        if (authLoading) return <div className="p-4">Loading...</div>;
 
         return (
             <div className="max-w-4xl mx-auto p-4">
                 <header className="flex justify-between items-center glass-card p-6 rounded-3xl mb-6">
-                    <h1 className="font-black text-emerald-400">WC PREDICTOR</h1>
+                    <div>
+                        <h1 className="font-black text-emerald-400">WC PREDICTOR 2026</h1>
+                        {user && <p className="text-[10px] text-slate-500">YOUR UID: {user.uid}</p>}
+                    </div>
                     <div className="flex gap-4">
                         {user?.uid === ADMIN_UID && <button onClick={() => setAdminMode(!adminMode)} className="bg-amber-500 text-black px-4 py-2 rounded-xl font-bold">⚙️</button>}
                         <button onClick={() => auth.signOut()} className="text-sm font-bold">Logout</button>
@@ -111,25 +129,49 @@
                 </header>
 
                 {adminMode && (
-                    <div className="glass-card p-6 mb-6 rounded-3xl">
-                        <button onClick={seedMatches} className="bg-red-500 p-2 rounded">Reset/Seed Matches</button>
+                    <div className="glass-card p-6 mb-6 rounded-3xl space-y-4">
+                        <div className="flex justify-between items-center">
+                            <h2 className="font-bold">ADMIN HUB</h2>
+                            <button onClick={manualSync} className="bg-amber-500 text-black px-4 py-2 rounded-xl font-bold">FORCE API SYNC</button>
+                        </div>
+                        <p className="text-xs text-amber-400">{syncStatus}</p>
+                        <button onClick={seedMatches} className="bg-red-500 text-white px-4 py-2 rounded-xl text-sm w-full font-bold">Reset All Matches</button>
                     </div>
                 )}
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     {matches.map(m => (
                         <div key={m.id} className="glass-card p-4 rounded-2xl">
-                            <p className="text-xs">{m.date} - Group {m.group}</p>
-                            <div className="flex justify-between items-center my-4">
-                                <span>{m.home}</span>
-                                <div className="flex gap-2">
-                                    <input type="number" className="w-12 bg-black text-center" value={m.homeScore} onChange={(e) => updateMatch(m.id, 'homeScore', e.target.value)}/>
-                                    <span>:</span>
-                                    <input type="number" className="w-12 bg-black text-center" value={m.awayScore} onChange={(e) => updateMatch(m.id, 'awayScore', e.target.value)}/>
-                                </div>
-                                <span>{m.away}</span>
+                            <div className="flex justify-between items-center mb-2">
+                                <p className="text-xs font-bold text-slate-400">{m.date} - Group {m.group}</p>
+                                {m.completed && <span className="bg-emerald-500 text-[10px] px-2 py-0.5 rounded-full font-bold">FT</span>}
                             </div>
-                            <button onClick={() => updateMatch(m.id, 'completed', true)} className="bg-emerald-500 w-full rounded py-1">Mark Finished</button>
+                            <div className="flex justify-between items-center my-4">
+                                <span className="font-bold">{m.home}</span>
+                                <div className="flex items-center gap-2">
+                                    {adminMode ? (
+                                        <>
+                                            <button onClick={() => updateMatch(m.id, 'homeScore', Math.max(0, m.homeScore - 1))} className="bg-slate-800 px-2 rounded">-</button>
+                                            <span className="w-8 text-center text-emerald-400 font-bold">{m.homeScore}</span>
+                                            <button onClick={() => updateMatch(m.id, 'homeScore', m.homeScore + 1)} className="bg-slate-800 px-2 rounded">+</button>
+                                        </>
+                                    ) : (
+                                        <span className="text-xl font-bold">{m.homeScore}</span>
+                                    )}
+                                    <span className="text-slate-600">:</span>
+                                    {adminMode ? (
+                                        <>
+                                            <button onClick={() => updateMatch(m.id, 'awayScore', Math.max(0, m.awayScore - 1))} className="bg-slate-800 px-2 rounded">-</button>
+                                            <span className="w-8 text-center text-emerald-400 font-bold">{m.awayScore}</span>
+                                            <button onClick={() => updateMatch(m.id, 'awayScore', m.awayScore + 1)} className="bg-slate-800 px-2 rounded">+</button>
+                                        </>
+                                    ) : (
+                                        <span className="text-xl font-bold">{m.awayScore}</span>
+                                    )}
+                                </div>
+                                <span className="font-bold">{m.away}</span>
+                            </div>
+                            {adminMode && <button onClick={() => updateMatch(m.id, 'completed', !m.completed)} className={`w-full rounded py-1 font-bold ${m.completed ? 'bg-slate-800' : 'bg-emerald-500'}`}>{m.completed ? 'Re-open Match' : 'Mark Finished'}</button>}
                         </div>
                     ))}
                 </div>
