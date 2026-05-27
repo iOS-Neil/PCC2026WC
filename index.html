@@ -1,0 +1,156 @@
+<script type="text/babel">
+    const { useState, useEffect, useMemo } = React;
+    
+    // Firebase Browser SDKs (ES Modules via Skypack)
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+    import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
+    import { getDatabase, ref, set, update, onValue } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
+
+    // ==========================================
+    // CONFIGURATION
+    // ==========================================
+    const firebaseConfig = {
+        apiKey: "AIzaSyC2Sr5IcLU9p2HopvBvOFlsBRGZtB1y9NE",
+        authDomain: "pcc2026wc.firebaseapp.com",
+        databaseURL: "https://pcc2026wc-default-rtdb.europe-west1.firebasedatabase.app",
+        projectId: "pcc2026wc",
+        storageBucket: "pcc2026wc.firebasestorage.app",
+        messagingSenderId: "435446315061",
+        appId: "1:435446315061:web:ab2b76edfb08e8ee6b997c"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const auth = getAuth(app);
+    const db = getDatabase(app);
+    const appId = "my-world-cup-predictor-2026";
+
+    const COUNTRY_FLAGS = {
+        "Mexico": "🇲🇽", "South Africa": "🇿🇦", "South Korea": "🇰🇷", "Czech Republic": "🇨🇿",
+        "Canada": "🇨🇦", "Bosnia": "🇧🇦", "Qatar": "🇶🇦", "Switzerland": "🇨🇭",
+        "Brazil": "🇧🇷", "Morocco": "🇲🇦", "Haiti": "🇭🇹", "Scotland": "🏴󠁧󠁢󠁳󠁿",
+        "USA": "🇺🇸", "Paraguay": "🇵🇾", "Australia": "🇦🇺", "Turkey": "🇹🇷",
+        "Germany": "🇩🇪", "Curaçao": "🇨🇼", "Ivory Coast": "🇨🇮", "Ecuador": "🇪🇨",
+        "Netherlands": "🇳🇱", "Japan": "🇯🇵", "Sweden": "🇸🇪", "Tunisia": "🇹🇳",
+        "Belgium": "🇧🇪", "Egypt": "🇪🇬", "Iran": "🇮🇷", "New Zealand": "🇳🇿",
+        "Spain": "🇪🇸", "Cape Verde": "🇨🇻", "Saudi Arabia": "🇸🇦", "Uruguay": "🇺🇾"
+    };
+
+    const GROUPS_TEAMS = {
+        A: ["Mexico", "South Africa", "South Korea", "Czech Republic"],
+        B: ["Canada", "Bosnia", "Qatar", "Switzerland"],
+        C: ["Brazil", "Morocco", "Haiti", "Scotland"],
+        D: ["USA", "Paraguay", "Australia", "Turkey"],
+        E: ["Germany", "Curaçao", "Ivory Coast", "Ecuador"],
+        F: ["Netherlands", "Japan", "Sweden", "Tunisia"],
+        G: ["Belgium", "Egypt", "Iran", "New Zealand"],
+        H: ["Spain", "Cape Verde", "Saudi Arabia", "Uruguay"]
+    };
+
+    // ==========================================
+    // APP COMPONENT
+    // ==========================================
+    function WorldCupApp() {
+        const [user, setUser] = useState(null);
+        const [matches, setMatches] = useState([]);
+        const [predictions, setPredictions] = useState([]);
+        const [activeTab, setActiveTab] = useState('predictions');
+        const [activeGroup, setActiveGroup] = useState('A');
+
+        useEffect(() => {
+            signInAnonymously(auth).catch(console.error);
+            onAuthStateChanged(auth, setUser);
+
+            const dataRef = ref(db, `artifacts/${appId}/public/data`);
+            return onValue(dataRef, (snapshot) => {
+                const data = snapshot.val() || {};
+                if (data.matches) {
+                    setMatches(Object.keys(data.matches).map(key => ({ ...data.matches[key], id: key })));
+                }
+                if (data.predictions) {
+                    setPredictions(Object.keys(data.predictions).map(key => ({ ...data.predictions[key], id: key })));
+                }
+            });
+        }, []);
+
+        const handleUpdatePrediction = async (matchId, team, change) => {
+            if (!user) return;
+            const predId = `${user.uid}_${matchId}`;
+            const found = predictions.find(p => p.id === predId) || { homePredict: 0, awayPredict: 0 };
+            let h = found.homePredict, a = found.awayPredict;
+            if (team === 'home') h = Math.max(0, h + change); else a = Math.max(0, a + change);
+
+            await set(ref(db, `artifacts/${appId}/public/data/predictions/${predId}`), {
+                userId: user.uid, matchId, homePredict: h, awayPredict: a, updatedAt: new Date().toISOString()
+            });
+        };
+
+        return (
+            <div className="min-h-screen text-slate-100 p-4 md:p-8 font-sans">
+                <header className="max-w-4xl mx-auto mb-8 text-center">
+                    <h1 className="text-3xl font-black bg-gradient-to-r from-emerald-400 to-teal-300 bg-clip-text text-transparent uppercase tracking-tighter">
+                        World Cup 2026 Predictor
+                    </h1>
+                    <p className="text-slate-500 text-xs font-bold mt-2 uppercase tracking-widest">Realtime Sync Active</p>
+                </header>
+
+                <main className="max-w-4xl mx-auto space-y-6">
+                    <div className="flex bg-slate-900 p-1 rounded-2xl border border-slate-800">
+                        {['predictions', 'leaderboard'].map(t => (
+                            <button key={t} onClick={() => setActiveTab(t)} className={`flex-1 py-3 text-xs font-black rounded-xl transition-all capitalize ${activeTab === t ? 'bg-emerald-500 text-slate-950' : 'text-slate-400'}`}>
+                                {t}
+                            </button>
+                        ))}
+                    </div>
+
+                    {activeTab === 'predictions' && (
+                        <div className="space-y-6 animate-in fade-in duration-500">
+                            <div className="flex flex-wrap gap-1 bg-slate-900/50 p-1 rounded-xl border border-slate-800">
+                                {Object.keys(GROUPS_TEAMS).map(g => (
+                                    <button key={g} onClick={() => setActiveGroup(g)} className={`flex-1 min-w-[40px] text-[10px] font-black py-2 rounded-lg transition-all ${activeGroup === g ? 'bg-slate-800 text-emerald-400' : 'text-slate-500'}`}>
+                                        {g}
+                                    </button>
+                                ))}
+                            </div>
+
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                {matches.filter(m => m.group === activeGroup).map(m => {
+                                    const p = predictions.find(pred => pred.matchId === m.id && pred.userId === user?.uid) || { homePredict: 0, awayPredict: 0 };
+                                    return (
+                                        <div key={m.id} className="bg-slate-900 p-6 rounded-[2rem] border border-slate-800 shadow-xl">
+                                            <div className="flex justify-between items-center px-2 mb-6">
+                                                <div className="text-center w-2/5">
+                                                    <span className="text-4xl block mb-2">{COUNTRY_FLAGS[m.home] || '🏳️'}</span>
+                                                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest truncate block">{m.home}</span>
+                                                </div>
+                                                <div className="text-slate-700 font-black text-xs">VS</div>
+                                                <div className="text-center w-2/5">
+                                                    <span className="text-4xl block mb-2">{COUNTRY_FLAGS[m.away] || '🏳️'}</span>
+                                                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest truncate block">{m.away}</span>
+                                                </div>
+                                            </div>
+                                            <div className="bg-slate-950 p-4 rounded-3xl border border-slate-800 flex justify-between items-center shadow-inner">
+                                                <div className="flex items-center gap-2">
+                                                    <button onClick={() => handleUpdatePrediction(m.id, 'home', -1)} className="w-8 h-8 bg-slate-800 rounded-xl font-black">-</button>
+                                                    <span className="w-4 text-center font-black text-emerald-400">{p.homePredict}</span>
+                                                    <button onClick={() => handleUpdatePrediction(m.id, 'home', 1)} className="w-8 h-8 bg-slate-800 rounded-xl font-black">+</button>
+                                                </div>
+                                                <div className="flex items-center gap-2">
+                                                    <button onClick={() => handleUpdatePrediction(m.id, 'away', -1)} className="w-8 h-8 bg-slate-800 rounded-xl font-black">-</button>
+                                                    <span className="w-4 text-center font-black text-emerald-400">{p.awayPredict}</span>
+                                                    <button onClick={() => handleUpdatePrediction(m.id, 'away', 1)} className="w-8 h-8 bg-slate-800 rounded-xl font-black">+</button>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                    )}
+                </main>
+            </div>
+        );
+    }
+
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<WorldCupApp />);
+</script>
