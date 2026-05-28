@@ -38,7 +38,7 @@
         "Canada": "🇨🇦", "Bosnia": "🇧🇦", "Qatar": "🇶🇦", "Switzerland": "🇨🇭",
         "Brazil": "🇧🇷", "Morocco": "🇲🇦", "Haiti": "🇭🇹", "Scotland": "🏴󠁧󠁢󠁳󠁣󠁴󠁿",
         "USA": "🇺🇸", "Paraguay": "🇵🇾", "Australia": "🇦🇺", "Turkey": "🇹🇷",
-        "Germany": "🇩🇪", "Curaçao": "🇨🇼", "Ivory Coast": "🇨🇮", "Ecuador": "🇪🇨",
+        "Germany": "🇩🇪", "Curaçao": "🇨🇼", "Ivory Coast": "🇨🇮", "Ecuador": "🇨🇪",
         "Netherlands": "🇳🇱", "Japan": "🇯🇵", "Sweden": "🇸🇪", "Tunisia": "🇹🇳",
         "Belgium": "🇧🇪", "Egypt": "🇪🇬", "Iran": "🇮🇷", "New Zealand": "🇳🇿",
         "Spain": "🇪🇸", "Cape Verde": "🇨🇻", "Saudi Arabia": "🇸🇦", "Uruguay": "🇺🇾"
@@ -63,7 +63,7 @@
         const [user, setUser] = React.useState(null);
         const [authLoading, setAuthLoading] = React.useState(true);
         const [authView, setAuthView] = React.useState('login');
-        const [username, setUsername] = React.useState('');
+        const [email, setEmail] = React.useState('');
         const [password, setPassword] = React.useState('');
         const [matches, setMatches] = React.useState([]);
         const [adminMode, setAdminMode] = React.useState(false);
@@ -99,10 +99,10 @@
         const handleAuth = async (e) => {
             e.preventDefault();
             try {
-                if (authView === 'login') await auth.signInWithEmailAndPassword(`${username}`, password);
+                if (authView === 'login') await auth.signInWithEmailAndPassword(email, password);
                 else {
-                    await auth.createUserWithEmailAndPassword(`${username}@wc.com`, password);
-                    await db.ref(`artifacts/${appId}/public/data/users/${auth.currentUser.uid}`).set({ name: username });
+                    await auth.createUserWithEmailAndPassword(email, password);
+                    await db.ref(`artifacts/${appId}/public/data/users/${auth.currentUser.uid}`).set({ name: email });
                 }
             } catch (err) { alert(err.message); }
         };
@@ -112,7 +112,7 @@
             <div className="max-w-md mx-auto p-10 glass-card rounded-3xl mt-20">
                 <h2 className="text-2xl font-black mb-6 text-emerald-400">{authView === 'login' ? 'LOGIN' : 'REGISTER'}</h2>
                 <form onSubmit={handleAuth} className="space-y-4">
-                    <input className="w-full bg-slate-800 p-3 rounded-xl" placeholder="Username" onChange={e => setUsername(e.target.value)} />
+                    <input className="w-full bg-slate-800 p-3 rounded-xl" placeholder="Email Address" onChange={e => setEmail(e.target.value)} />
                     <input className="w-full bg-slate-800 p-3 rounded-xl" type="password" placeholder="Password" onChange={e => setPassword(e.target.value)} />
                     <button className="w-full bg-emerald-500 p-3 rounded-xl font-bold">SUBMIT</button>
                 </form>
